@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PanoSphere Pro Studio – Virtual Tour & Editor</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            900: '#0c4a6e',
+                        },
+                        dark: {
+                            950: '#07090e',
+                            900: '#0b0f17',
+                            800: '#131924',
+                            700: '#1e2638',
+                            600: '#2a344a'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Pannellum 360 Library -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css"/>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- FontAwesome & Phosphor Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+    
+    <style>
+        body, html { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            background-color: #07090e; 
+            color: #f8fafc;
+            overflow-x: hidden; 
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Glassmorphism primitives */
+        .glass-panel {
+            background: rgba(19, 25, 36, 0.72);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+        
+        .glass-pill {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .glass-button {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-button:hover {
+            background: rgba(56, 189, 248, 0.15);
+            border-color: rgba(56, 189, 248, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+        }
+
+        #panorama { width: 100%; height: 100%; }
+
+        /* Neutralize Pannellum's default info hotspot wrapper */
+        .pnm-info-hotspot {
+            background: none !important;
+            background-image: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            width: auto !important;
+            height: auto !important;
+        }
+        .pnm-info-hotspot::after { display: none !important; }
+
+        /* Forcefully remove lingering focus rings, outlines, or click highlights */
+        .pnm-info-hotspot, 
+        .pnm-info-hotspot div, 
+        .pnm-info-hotspot span,
+        .pnm-info-hotspot * {
+            -webkit-tap-highlight-color: transparent !important;
+            -webkit-touch-callout: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        .pnm-info-hotspot:focus, 
+        .pnm-info-hotspot:active {
+            background-color: transparent !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        .pnm-title, .pnm-scene-title, .pnm-scene-information, .pnm-load-box, div[class*="pnm-title"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+        }
+
+        /* Animations */
+        @keyframes floatBounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
+        @keyframes pulseRing {
+            0% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.6); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 14px rgba(56, 189, 248, 0); }
+            100% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+
+        .custom-arrow-container {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            animation: floatBounce 3s ease-in-out infinite;
+            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.6));
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            -webkit-tap-highlight-color: transparent !important;
+        }
+        .custom-arrow-container:hover {
+            transform: scale(1.15) translateY(-4px);
+        }
+
+        .custom-arrow-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            border: 2px solid #ffffff;
+            animation: pulseRing 2.4s infinite cubic-bezier(0.4, 0, 0.6, 1);
+        }
+
+        .custom-arrow-label {
+            margin-top: 6px;
+            background: rgba(11, 15, 23, 0.8) !important;
+            color: #f8fafc;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            white-space: nowrap;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(7, 9, 14, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+    </style>
+</head>
+<body class="flex flex-col h-screen antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- TOP GLOBAL NAVIGATION BAR -->
+    <header class="h-16 px-6 glass-panel border-b border-white/10 flex items-center justify-between z-40 relative">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="switchView('dashboard')">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-brand-500/30">
+                <i class="fa-solid fa-vr-cardboard text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-base tracking-wide bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">PanoSphere Studio</h1>
+                <p class="text-[10px] text-brand-400 tracking-wider font-semibold uppercase">Kuula-Grade Pro Suite</p>
+            </div>
+        </div>
+
+        <!-- Mode Toggle & Controls -->
+        <div class="flex items-center space-x-4">
+            <div id="nav-viewer-controls" class="hidden flex items-center space-x-2 bg-dark-800/80 p-1.5 rounded-xl border border-white/10">
+                <button onclick="switchView('dashboard')" class="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white rounded-lg transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-grip"></i> Dashboard
+                </button>
+                <button id="toggle-editor-btn" onclick="toggleEditMode()" class="px-3 py-1.5 text-xs font-medium bg-brand-500/20 text-brand-400 border border-brand-500/40 hover:bg-brand-500/30 rounded-lg transition-all flex items-center gap-1.5">
+                    <i class="fa-solid fa-pen-to-square"></i> <span id="editor-mode-label">Hotspot Editor</span>
+                </button>
+                <button onclick="openShareModal()" class="px-3 py-1.5 text-xs font-semibold bg-brand-500 hover:bg-brand-400 text-dark-950 rounded-lg transition-all shadow-md shadow-brand-500/20 flex items-center gap-1.5">
+                    <i class="fa-solid fa-share-nodes"></i> Share / Embed
+                </button>
+            </div>
+
+            <!-- Profile Badge -->
+            <div class="flex items-center gap-3 pl-4 border-l border-white/10">
+                <div class="w-8 h-8 rounded-full bg-slate-700 border border-white/20 flex items-center justify-center text-xs font-bold text-white">
+                    JS
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- VIEW 1: STUDIO DASHBOARD (Bento Grid) -->
+    <main id="view-dashboard" class="flex-1 overflow-y-auto p-6 md:p-10 max-w-7xl mx-auto w-full space-y-8">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-panel p-8 rounded-3xl relative overflow-hidden">
+            <div class="absolute -right-10 -bottom-10 w-64 h-64 bg-brand-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="space-y-2 z-10">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 text-xs font-medium">
+                    <span class="w-2 h-2 rounded-full bg-brand-400 animate-pulse"></span> Connected to Supabase Engine
+                </div>
+                <h2 class="text-3xl font-extrabold text-white tracking-tight">Virtual Tour Projects</h2>
+                <p class="text-sm text-slate-400 max-w-lg">Manage, edit hotspots, and share interactive 360° virtual property tours.</p>
+            </div>
+            <button onclick="openCreateTourModal()" class="z-10 px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-400 hover:to-indigo-500 text-white font-semibold text-sm shadow-xl shadow-brand-500/25 transition-all transform hover:-translate-y-0.5 flex items-center gap-2 justify-center">
+                <i class="fa-solid fa-circle-plus text-base"></i> Create New Tour
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-folder-open text-brand-400"></i> My Projects 
+                    <span id="tour-count-badge" class="px-2.5 py-0.5 text-xs rounded-full bg-slate-800 text-slate-400 border border-white/10">0 Tours</span>
+                </h3>
+            </div>
+            <div id="tours-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Skeleton Loader -->
+                <div class="glass-panel p-5 rounded-2xl space-y-4 animate-pulse">
+                    <div class="h-48 bg-slate-800/80 rounded-xl"></div>
+                    <div class="h-5 bg-slate-800 rounded w-2/3"></div>
+                    <div class="h-4 bg-slate-800 rounded w-1/3"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- VIEW 2: 360° PANORAMA VIEWER & EDITOR -->
+    <main id="view-viewer" class="hidden flex-1 relative w-full h-full overflow-hidden bg-black">
+        <div id="tour-title-bar" class="glass-pill fixed top-20 left-1/2 -translate-x-1/2 px-6 py-2.5 rounded-2xl text-xs font-semibold tracking-wide text-white z-30 flex items-center gap-3 transition-all">
+            <span class="w-2.5 h-2.5 rounded-full bg-brand-400 shadow-md shadow-brand-400/50"></span>
+            <span id="top-bar-text">Loading 360 Scene...</span>
+        </div>
+
+        <div id="editor-action-bar" class="hidden glass-pill fixed top-36 left-1/2 -translate-x-1/2 px-4 py-2 rounded-2xl z-30 flex items-center gap-3 border border-brand-500/30">
+            <span class="text-xs font-medium text-brand-400 flex items-center gap-1.5">
+                <i class="fa-solid fa-crosshairs animate-spin"></i> Click anywhere on panorama to add hotspot
+            </span>
+            <div class="h-4 w-px bg-white/20"></div>
+            <button onclick="setInitialView()" class="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition-colors flex items-center gap-1.5">
+                <i class="fa-solid fa-camera"></i> Save Initial Start View
+            </button>
+        </div>
+
+        <div id="transition-overlay" class="absolute inset-0 bg-dark-950 opacity-0 pointer-events-none transition-opacity duration-300 z-20"></div>
+        <div id="panorama" class="w-full h-full"></div>
+
+        <div class="glass-panel fixed bottom-6 left-1/2 -translate-x-1/2 max-w-4xl w-[92vw] px-4 py-3 rounded-2xl z-30 flex items-center gap-3 overflow-x-auto shadow-2xl border border-white/10">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 border-r border-white/10 whitespace-nowrap">
+                <i class="fa-solid fa-layer-group text-brand-400 mr-1.5"></i> Scenes
+            </div>
+            <div id="thumbnail-tray" class="flex items-center gap-3 overflow-x-auto py-1 scrollbar-none"></div>
+            <label class="ml-auto px-3 py-2 rounded-xl bg-white/10 hover:bg-brand-500/20 hover:border-brand-500/40 border border-white/10 text-xs font-medium text-brand-400 whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer">
+                <i class="fa-solid fa-plus"></i> Add Scenes
+                <input type="file" id="addMorePanos" accept="image/*" multiple class="hidden" onchange="handleUploadMoreScenes(event)" />
+            </label>
+        </div>
+    </main>
+
+    <!-- MODAL 1: HOTSPOT EDITOR -->
+    <div id="modal-hotspot" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-md rounded-3xl p-6 space-y-5 border border-white/15 shadow-2xl relative">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-location-dot text-brand-400"></i> Configure Hotspot
+                </h3>
+                <button onclick="closeModal('modal-hotspot')" class="text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <form id="form-hotspot" onsubmit="saveHotspot(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Hotspot Label / Title</label>
+                    <input type="text" id="hs-label" required placeholder="e.g. Go to Living Room" class="w-full px-4 py-2.5 rounded-xl bg-dark-900 border border-white/15 text-white text-sm focus:outline-none focus:border-brand-400">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Target Destination Scene</label>
+                    <select id="hs-target-scene" required class="w-full px-4 py-2.5 rounded-xl bg-dark-900 border border-white/15 text-white text-sm focus:outline-none focus:border-brand-400"></select>
+                </div>
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <input type="hidden" id="hs-pitch">
+                    <input type="hidden" id="hs-yaw">
+                    <button type="button" onclick="closeModal('modal-hotspot')" class="w-full py-2.5 rounded-xl glass-button text-slate-300 text-xs font-semibold">Cancel</button>
+                    <button type="submit" class="w-full py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-dark-950 font-bold text-xs shadow-lg shadow-brand-500/20 transition-all">Save Hotspot</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 2: CREATE TOUR (Supports Multiple Photos) -->
+    <div id="modal-create-tour" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-lg rounded-3xl p-6 space-y-5 border border-white/15 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-folder-plus text-brand-400"></i> Create Virtual Tour
+                </h3>
+                <button onclick="closeModal('modal-create-tour')" class="text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <form id="form-create-tour" onsubmit="handleCreateTour(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Tour Project Name</label>
+                    <input type="text" id="new-tour-title" required placeholder="e.g. Modern Villa Residency" class="w-full px-4 py-2.5 rounded-xl bg-dark-900 border border-white/15 text-white text-sm focus:outline-none focus:border-brand-400">
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">360° Panorama Images (Select Multiple)</label>
+                    <input type="file" id="panoFiles" accept="image/*" multiple required class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-500 file:text-dark-950 hover:file:bg-brand-400 cursor-pointer bg-dark-900 border border-white/15 rounded-xl p-2" />
+                    <p class="text-[11px] text-slate-400">Hold Ctrl or Shift to select multiple 360° equirectangular photos.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button type="button" onclick="closeModal('modal-create-tour')" class="w-full py-2.5 rounded-xl glass-button text-slate-300 text-xs font-semibold">Cancel</button>
+                    <button type="submit" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-brand-500/25 transition-all">Create Project & Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 3: SHARE / EMBED SUITE -->
+    <div id="modal-share" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-xl rounded-3xl p-6 space-y-5 border border-white/15 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-share-nodes text-brand-400"></i> Client Export & Share Suite
+                </h3>
+                <button onclick="closeModal('modal-share')" class="text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Direct Tour Shareable Link</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="share-link-input" readonly class="flex-1 px-4 py-2.5 rounded-xl bg-dark-900 border border-white/15 text-brand-400 text-xs font-mono focus:outline-none">
+                        <button onclick="copyToClipboard('share-link-input')" class="px-4 py-2.5 rounded-xl bg-brand-500 text-dark-950 font-bold text-xs hover:bg-brand-400 transition-colors">Copy</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC & SUPABASE CONTROLLER -->
+    <script>
+        const SUPABASE_URL = 'https://pcfdrglvvmlrjzhwuvze.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_btfQ4JKEiDvRm89qO8TZFg_n1rBqVGz';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let currentTour = null;
+        let currentScenes = [];
+        let activeSceneId = null;
+        let isEditorMode = false;
+
+        window.onload = function() {
+            const params = new URLSearchParams(window.location.search);
+            const tourId = params.get('id');
+            if (tourId) {
+                loadSpecificTour(tourId);
+            } else {
+                fetchProjectsList();
+            }
+        };
+
+        function switchView(viewName) {
+            const dashboardView = document.getElementById('view-dashboard');
+            const viewerView = document.getElementById('view-viewer');
+            const navControls = document.getElementById('nav-viewer-controls');
+
+            if (viewName === 'viewer') {
+                dashboardView.classList.add('hidden');
+                viewerView.classList.remove('hidden');
+                navControls.classList.remove('hidden');
+            } else {
+                viewerView.classList.add('hidden');
+                dashboardView.classList.remove('hidden');
+                navControls.classList.add('hidden');
+                fetchProjectsList();
+            }
+        }
+
+        async function fetchProjectsList() {
+            const gridContainer = document.getElementById('tours-grid');
+            gridContainer.innerHTML = '';
+
+            const { data: tours } = await supabaseClient.from('tours').select('*, scenes(*)');
+            let toursToDisplay = tours || [];
+            document.getElementById('tour-count-badge').innerText = `${toursToDisplay.length} Projects`;
+
+            toursToDisplay.forEach(tour => {
+                const sceneCount = tour.scenes ? tour.scenes.length : 0;
+                const firstSceneCover = (tour.scenes && tour.scenes[0]) ? tour.scenes[0].panorama_url : 'https://placehold.co/600x400/131924/38bdf8?text=360+Tour';
+
+                const card = document.createElement('div');
+                card.className = 'glass-panel rounded-3xl overflow-hidden hover:border-brand-500/50 transition-all duration-300 group flex flex-col justify-between';
+                card.innerHTML = `
+                    <div>
+                        <div class="relative h-52 overflow-hidden bg-slate-900">
+                            <img src="${firstSceneCover}" alt="${tour.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80 group-hover:opacity-100">
+                            <div class="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-transparent"></div>
+                            <span class="absolute top-4 right-4 glass-pill px-3 py-1 rounded-full text-[11px] font-semibold text-brand-400 border border-brand-400/30 flex items-center gap-1.5">
+                                <i class="fa-solid fa-camera"></i> ${sceneCount} Rooms
+                            </span>
+                        </div>
+                        <div class="p-6 space-y-2">
+                            <h4 class="text-lg font-bold text-white group-hover:text-brand-400 transition-colors">${tour.title || 'Untitled Property Tour'}</h4>
+                            <p class="text-xs text-slate-400">Created ${new Date(tour.created_at || Date.now()).toLocaleDateString()}</p>
+                        </div>
+                    </div>
+                    <div class="px-6 pb-6 pt-2 flex items-center justify-between border-t border-white/5 gap-2">
+                        <button onclick="loadSpecificTour('${tour.id}')" class="flex-1 py-2.5 rounded-xl bg-brand-500/15 hover:bg-brand-500 border border-brand-500/30 text-brand-400 hover:text-dark-950 font-bold text-xs transition-all flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-eye"></i> Launch Studio
+                        </button>
+                        <button onclick="openShareModal('${tour.id}')" class="p-2.5 rounded-xl glass-button text-slate-400 hover:text-white"><i class="fa-solid fa-share-nodes"></i></button>
+                    </div>
+                `;
+                gridContainer.appendChild(card);
+            });
+        }
+
+        async function loadSpecificTour(tourId) {
+            const { data: tour } = await supabaseClient.from('tours').select('*').eq('id', tourId).single();
+            const { data: scenes } = await supabaseClient.from('scenes').select('*').eq('tour_id', tourId).order('order_index', { ascending: true });
+
+            if (!tour || !scenes || scenes.length === 0) {
+                alert('Tour not found or has no scenes.');
+                return;
+            }
+
+            currentTour = tour;
+            currentScenes = scenes;
+            activeSceneId = scenes[0].id;
+
+            document.title = `${tour.title} – 360° Studio`;
+            document.getElementById('top-bar-text').innerText = tour.title;
+
+            switchView('viewer');
+            renderThumbnailsTray();
+            initPannellumViewer();
+        }
+
+        // --- Multi-file Tour Creation ---
+        async function handleCreateTour(event) {
+            event.preventDefault();
+            const title = document.getElementById('new-tour-title').value;
+            const fileInput = document.getElementById('panoFiles');
+            const files = fileInput.files;
+
+            if (!files || files.length === 0) return;
+
+            // 1. Insert Tour Record
+            const { data: tourData, error: tourError } = await supabaseClient
+                .from('tours')
+                .insert([{ title }])
+                .select()
+                .single();
+
+            if (tourError) {
+                alert('Error creating tour: ' + tourError.message);
+                return;
+            }
+
+            const tourId = tourData.id;
+
+            // 2. Upload Each Panorama File and Insert Scene
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const sceneId = crypto.randomUUID();
+                const storagePath = `tour_${tourId}_${sceneId}.jpg`;
+
+                const { error: uploadError } = await supabaseClient.storage
+                    .from('panoramas')
+                    .upload(storagePath, file);
+
+                if (uploadError) {
+                    console.error('Upload error:', uploadError.message);
+                    continue;
+                }
+
+                const { data: publicUrlData } = supabaseClient.storage
+                    .from('panoramas')
+                    .getPublicUrl(storagePath);
+
+                const panoramaUrl = publicUrlData.publicUrl;
+
+                await supabaseClient.from('scenes').insert([{
+                    id: sceneId,
+                    tour_id: tourId,
+                    title: file.name.replace(/\.[^/.]+$/, ""),
+                    panorama_url: panoramaUrl,
+                    order_index: i,
+                    hotspots: []
+                }]);
+            }
+
+            closeModal('modal-create-tour');
+            loadSpecificTour(tourId);
+        }
+
+        async function handleUploadMoreScenes(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0 || !currentTour) return;
+
+            const tourId = currentTour.id;
+            const startIndex = currentScenes.length;
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const sceneId = crypto.randomUUID();
+                const storagePath = `tour_${tourId}_${sceneId}.jpg`;
+
+                await supabaseClient.storage.from('panoramas').upload(storagePath, file);
+                const { data: publicUrlData } = supabaseClient.storage.from('panoramas').getPublicUrl(storagePath);
+
+                await supabaseClient.from('scenes').insert([{
+                    id: sceneId,
+                    tour_id: tourId,
+                    title: file.name.replace(/\.[^/.]+$/, ""),
+                    panorama_url: publicUrlData.publicUrl,
+                    order_index: startIndex + i,
+                    hotspots: []
+                }]);
+            }
+
+            loadSpecificTour(tourId);
+        }
+
+        function initPannellumViewer() {
+            const scenesConfig = {};
+
+            currentScenes.forEach((scene) => {
+                const hotspots = (scene.hotspots || []).map(hs => {
+                    const targetScene = currentScenes.find(s => s.id === hs.target_scene_id);
+                    const previewUrl = targetScene ? targetScene.panorama_url : '';
+
+                    return {
+                        pitch: hs.pitch,
+                        yaw: hs.yaw,
+                        type: "info",
+                        text: hs.label,
+                        createTooltipFunc: function(div, args) {
+                            div.style.backgroundColor = 'transparent';
+                            div.style.border = 'none';
+
+                            const container = document.createElement('div');
+                            container.className = 'custom-arrow-container';
+
+                            const icon = document.createElement('div');
+                            icon.className = 'custom-arrow-icon';
+                            if (args.preview) icon.style.backgroundImage = `url('${args.preview}')`;
+                            container.appendChild(icon);
+
+                            const lbl = document.createElement('div');
+                            lbl.className = 'custom-arrow-label';
+                            lbl.innerText = args.text;
+                            container.appendChild(lbl);
+
+                            div.appendChild(container);
+                        },
+                        createTooltipArgs: { text: hs.label, preview: previewUrl },
+                        clickHandlerFunc: function(evt, targetSceneId) {
+                            if (window.viewer && targetSceneId) {
+                                const overlay = document.getElementById('transition-overlay');
+                                overlay.style.opacity = '1';
+                                window.viewer.lookAt(hs.pitch, hs.yaw, 10, 200, function() {
+                                    window.viewer.loadScene(targetSceneId);
+                                    setTimeout(() => { overlay.style.opacity = '0'; }, 100);
+                                });
+                            }
+                        },
+                        clickHandlerArgs: hs.target_scene_id
+                    };
+                });
+
+                scenesConfig[scene.id] = {
+                    title: scene.title,
+                    type: "equirectangular",
+                    panorama: scene.panorama_url,
+                    autoLoad: true,
+                    hotSpots: hotspots
+                };
+            });
+
+            if (window.viewer) window.viewer.destroy();
+
+            window.viewer = pannellum.viewer('panorama', {
+                default: {
+                    firstScene: activeSceneId,
+                    sceneFadeDuration: 500,
+                    compass: true
+                },
+                scenes: scenesConfig
+            });
+
+            window.viewer.on('scenechange', function(sceneId) {
+                activeSceneId = sceneId;
+                renderThumbnailsTray();
+            });
+
+            window.viewer.on('mouseup', function(event) {
+                if (!isEditorMode) return;
+                const coord = window.viewer.mouseEventToCoords(event);
+                tempClickCoords = { pitch: coord[0], yaw: coord[1] };
+                openHotspotModal();
+            });
+        }
+
+        function renderThumbnailsTray() {
+            const tray = document.getElementById('thumbnail-tray');
+            tray.innerHTML = '';
+
+            currentScenes.forEach(scene => {
+                const isActive = scene.id === activeSceneId;
+                const thumb = document.createElement('div');
+                thumb.className = `relative w-20 h-14 rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${isActive ? 'border-brand-400 scale-105 shadow-lg shadow-brand-500/30' : 'border-white/15 opacity-70 hover:opacity-100'}`;
+                thumb.innerHTML = `
+                    <img src="${scene.panorama_url}" class="w-full h-full object-cover">
+                    <div class="absolute inset-0 bg-dark-950/40 flex items-end p-1">
+                        <span class="text-[9px] font-bold text-white truncate">${scene.title}</span>
+                    </div>
+                `;
+                thumb.onclick = () => {
+                    activeSceneId = scene.id;
+                    window.viewer.loadScene(scene.id);
+                };
+                tray.appendChild(thumb);
+            });
+        }
+
+        function toggleEditMode() {
+            isEditorMode = !isEditorMode;
+            const btn = document.getElementById('toggle-editor-btn');
+            const label = document.getElementById('editor-mode-label');
+            const actionBar = document.getElementById('editor-action-bar');
+
+            if (isEditorMode) {
+                btn.className = 'px-3 py-1.5 text-xs font-medium bg-brand-500 text-dark-950 rounded-lg transition-all flex items-center gap-1.5 font-bold shadow-lg shadow-brand-500/30';
+                label.innerText = 'Exit Editor';
+                actionBar.classList.remove('hidden');
+            } else {
+                btn.className = 'px-3 py-1.5 text-xs font-medium bg-brand-500/20 text-brand-400 border border-brand-500/40 hover:bg-brand-500/30 rounded-lg transition-all flex items-center gap-1.5';
+                label.innerText = 'Hotspot Editor';
+                actionBar.classList.add('hidden');
+            }
+        }
+
+        function openHotspotModal() {
+            document.getElementById('hs-label').value = '';
+            const select = document.getElementById('hs-target-scene');
+            select.innerHTML = '';
+
+            currentScenes.forEach(scene => {
+                if (scene.id !== activeSceneId) {
+                    const opt = document.createElement('option');
+                    opt.value = scene.id;
+                    opt.innerText = scene.title;
+                    select.appendChild(opt);
+                }
+            });
+
+            document.getElementById('modal-hotspot').classList.remove('hidden');
+        }
+
+        async function saveHotspot(event) {
+            event.preventDefault();
+            const label = document.getElementById('hs-label').value;
+            const targetSceneId = document.getElementById('hs-target-scene').value;
+
+            const currentSceneObj = currentScenes.find(s => s.id === activeSceneId);
+            const hotspots = currentSceneObj.hotspots || [];
+
+            hotspots.push({
+                pitch: tempClickCoords.pitch,
+                yaw: tempClickCoords.yaw,
+                label: label,
+                target_scene_id: targetSceneId
+            });
+
+            await supabaseClient.from('scenes').update({ hotspots }).eq('id', activeSceneId);
+            closeModal('modal-hotspot');
+            loadSpecificTour(currentTour.id);
+        }
+
+        function setInitialView() {
+            if (!window.viewer) return;
+            const pitch = window.viewer.getPitch();
+            const yaw = window.viewer.getYaw();
+            supabaseClient.from('scenes').update({ initial_pitch: pitch, initial_yaw: yaw }).eq('id', activeSceneId);
+            alert('Initial starting view saved for this room.');
+        }
+
+        function openCreateTourModal() { document.getElementById('modal-create-tour').classList.remove('hidden'); }
+        
+        function openShareModal() {
+            if (!currentTour) return;
+            const shareUrl = `https://suki-tour.vercel.app/?id=${currentTour.id}`;
+            document.getElementById('share-link-input').value = shareUrl;
+            document.getElementById('modal-share').classList.remove('hidden');
+        }
+
+        function closeModal(modalId) { document.getElementById(modalId).classList.add('hidden'); }
+
+        function copyToClipboard(elementId) {
+            const input = document.getElementById(elementId);
+            input.select();
+            navigator.clipboard.writeText(input.value);
+            alert('Copied to clipboard!');
+        }
+    </script>
+</body>
+</html>
